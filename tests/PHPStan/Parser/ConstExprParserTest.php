@@ -3,6 +3,7 @@
 namespace PHPStan\PhpDocParser\Parser;
 
 use Iterator;
+use PHPStan\PhpDocParser\Ast\Attribute;
 use PHPStan\PhpDocParser\Ast\ConstExpr\ConstExprArrayItemNode;
 use PHPStan\PhpDocParser\Ast\ConstExpr\ConstExprArrayNode;
 use PHPStan\PhpDocParser\Ast\ConstExpr\ConstExprFalseNode;
@@ -13,6 +14,7 @@ use PHPStan\PhpDocParser\Ast\ConstExpr\ConstExprNullNode;
 use PHPStan\PhpDocParser\Ast\ConstExpr\ConstExprStringNode;
 use PHPStan\PhpDocParser\Ast\ConstExpr\ConstExprTrueNode;
 use PHPStan\PhpDocParser\Ast\ConstExpr\ConstFetchNode;
+use PHPStan\PhpDocParser\Ast\NodeTraverser;
 use PHPStan\PhpDocParser\Lexer\Lexer;
 use PHPUnit\Framework\TestCase;
 
@@ -29,7 +31,7 @@ class ConstExprParserTest extends TestCase
 	{
 		parent::setUp();
 		$this->lexer = new Lexer();
-		$this->constExprParser = new ConstExprParser();
+		$this->constExprParser = new ConstExprParser(true);
 	}
 
 
@@ -58,6 +60,38 @@ class ConstExprParserTest extends TestCase
 		$this->assertSame((string) $expectedExpr, (string) $exprNode);
 		$this->assertEquals($expectedExpr, $exprNode);
 		$this->assertSame($nextTokenType, $tokens->currentTokenType());
+	}
+
+
+	/**
+	 * @dataProvider provideTrueNodeParseData
+	 * @dataProvider provideFalseNodeParseData
+	 * @dataProvider provideNullNodeParseData
+	 * @dataProvider provideIntegerNodeParseData
+	 * @dataProvider provideFloatNodeParseData
+	 * @dataProvider provideStringNodeParseData
+	 * @dataProvider provideArrayNodeParseData
+	 * @dataProvider provideFetchNodeParseData
+	 *
+	 * @dataProvider provideWithTrimStringsStringNodeParseData
+	 */
+	public function testVerifyAttributes(string $input): void
+	{
+		$tokens = new TokenIterator($this->lexer->tokenize($input));
+		$constExprParser = new ConstExprParser(true, true, [
+			'lines' => true,
+			'indexes' => true,
+		]);
+		$visitor = new NodeCollectingVisitor();
+		$traverser = new NodeTraverser([$visitor]);
+		$traverser->traverse([$constExprParser->parse($tokens)]);
+
+		foreach ($visitor->nodes as $node) {
+			$this->assertNotNull($node->getAttribute(Attribute::START_LINE), (string) $node);
+			$this->assertNotNull($node->getAttribute(Attribute::END_LINE), (string) $node);
+			$this->assertNotNull($node->getAttribute(Attribute::START_INDEX), (string) $node);
+			$this->assertNotNull($node->getAttribute(Attribute::END_INDEX), (string) $node);
+		}
 	}
 
 
@@ -126,6 +160,16 @@ class ConstExprParserTest extends TestCase
 		];
 
 		yield [
+			'+123',
+			new ConstExprIntegerNode('+123'),
+		];
+
+		yield [
+			'-123',
+			new ConstExprIntegerNode('-123'),
+		];
+
+		yield [
 			'0b0110101',
 			new ConstExprIntegerNode('0b0110101'),
 		];
@@ -148,6 +192,26 @@ class ConstExprParserTest extends TestCase
 		yield [
 			'-0X7Fb4',
 			new ConstExprIntegerNode('-0X7Fb4'),
+		];
+
+		yield [
+			'123_456',
+			new ConstExprIntegerNode('123456'),
+		];
+
+		yield [
+			'0b01_01_01',
+			new ConstExprIntegerNode('0b010101'),
+		];
+
+		yield [
+			'-0X7_Fb_4',
+			new ConstExprIntegerNode('-0X7Fb4'),
+		];
+
+		yield [
+			'18_446_744_073_709_551_616', // 64-bit unsigned long + 1, larger than PHP_INT_MAX
+			new ConstExprIntegerNode('18446744073709551616'),
 		];
 	}
 
@@ -185,8 +249,13 @@ class ConstExprParserTest extends TestCase
 		];
 
 		yield [
-			'-123',
-			new ConstExprIntegerNode('-123'),
+			'+123.5',
+			new ConstExprFloatNode('+123.5'),
+		];
+
+		yield [
+			'-123.',
+			new ConstExprFloatNode('-123.'),
 		];
 
 		yield [
@@ -212,6 +281,36 @@ class ConstExprParserTest extends TestCase
 		yield [
 			'-12.3e-4',
 			new ConstExprFloatNode('-12.3e-4'),
+		];
+
+		yield [
+			'-1_2.3_4e5_6',
+			new ConstExprFloatNode('-12.34e56'),
+		];
+
+		yield [
+			'123.4e+8',
+			new ConstExprFloatNode('123.4e+8'),
+		];
+
+		yield [
+			'.4e+8',
+			new ConstExprFloatNode('.4e+8'),
+		];
+
+		yield [
+			'123E+80',
+			new ConstExprFloatNode('123E+80'),
+		];
+
+		yield [
+			'8.2023437675747321', // greater precision than 64-bit double
+			new ConstExprFloatNode('8.2023437675747321'),
+		];
+
+		yield [
+			'-0.0',
+			new ConstExprFloatNode('-0.0'),
 		];
 	}
 
@@ -372,6 +471,52 @@ class ConstExprParserTest extends TestCase
 		yield [
 			'self::CLASS_CONSTANT',
 			new ConstFetchNode('self', 'CLASS_CONSTANT'),
+		];
+	}
+
+	/**
+	 * @dataProvider provideWithTrimStringsStringNodeParseData
+	 */
+	public function testParseWithTrimStrings(string $input, ConstExprNode $expectedExpr, int $nextTokenType = Lexer::TOKEN_END): void
+	{
+		$tokens = new TokenIterator($this->lexer->tokenize($input));
+		$exprNode = $this->constExprParser->parse($tokens, true);
+
+		$this->assertSame((string) $expectedExpr, (string) $exprNode);
+		$this->assertEquals($expectedExpr, $exprNode);
+		$this->assertSame($nextTokenType, $tokens->currentTokenType());
+	}
+
+	public function provideWithTrimStringsStringNodeParseData(): Iterator
+	{
+		yield [
+			'"foo"',
+			new ConstExprStringNode('foo'),
+		];
+
+		yield [
+			'"Foo \\n\\"\\r Bar"',
+			new ConstExprStringNode("Foo \n\"\r Bar"),
+		];
+
+		yield [
+			'\'bar\'',
+			new ConstExprStringNode('bar'),
+		];
+
+		yield [
+			'\'Foo \\\' Bar\'',
+			new ConstExprStringNode('Foo \' Bar'),
+		];
+
+		yield [
+			'"\u{1f601}"',
+			new ConstExprStringNode("\u{1f601}"),
+		];
+
+		yield [
+			'"\u{ffffffff}"',
+			new ConstExprStringNode("\u{fffd}"),
 		];
 	}
 
