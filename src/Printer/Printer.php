@@ -110,6 +110,7 @@ final class Printer
 		ObjectShapeNode::class . '->items' => ', ',
 		CallableTypeNode::class . '->parameters' => ', ',
 		CallableTypeNode::class . '->templateTypes' => ', ',
+		GenericTypeNode::class . '->purities' => ', ',
 		GenericTypeNode::class . '->genericTypes' => ', ',
 		ConstExprArrayNode::class . '->items' => ', ',
 		MethodTagValueNode::class . '->parameters' => ', ',
@@ -435,8 +436,9 @@ final class Printer
 			$template = $node->templateTypes !== []
 				? '<' . implode(', ', array_map(fn (TemplateTagValueNode $templateNode): string => $this->print($templateNode), $node->templateTypes)) . '>'
 				: '';
+			$purity = $node->purity !== null ? '[' . $this->printType($node->purity) . ']' : '';
 			$parameters = implode(', ', array_map(fn (CallableTypeParameterNode $parameterNode): string => $this->print($parameterNode), $node->parameters));
-			return "{$node->identifier}{$template}({$parameters}): {$returnType}";
+			return "{$node->identifier}{$purity}{$template}({$parameters}): {$returnType}";
 		}
 		if ($node instanceof ConditionalTypeForParameterNode) {
 			return sprintf(
@@ -475,7 +477,11 @@ final class Printer
 				}
 			}
 
-			return $node->type . '<' . implode(', ', $genericTypes) . '>';
+			$purities = $node->purities !== []
+				? '[' . implode(', ', array_map(fn (TypeNode $purity): string => $this->printType($purity), $node->purities)) . ']'
+				: '';
+
+			return $node->type . $purities . '<' . implode(', ', $genericTypes) . '>';
 		}
 		if ($node instanceof IdentifierTypeNode) {
 			return $node->name;

@@ -205,6 +205,8 @@ IdentifierTail
 IdentifierSuffix
   : &<T_OPEN_ANGLE_BRACKET> ( CallableWithTemplates() | Generic() ArrayOrOffsetAccess()? )
   | Callable()
+  | Purities() Generic() ArrayOrOffsetAccess()?
+  | Purity() Callable()
   | ArrayOrOffsetAccess()
   ;
 
@@ -245,6 +247,27 @@ ArrayOrOffsetAccess
 ArrayOrOffsetAccessItem
   : <T_OPEN_SQUARE_BRACKET> !<T_CLOSE_SQUARE_BRACKET> Type() <T_CLOSE_SQUARE_BRACKET>
   | SquareBracketOpen() <T_CLOSE_SQUARE_BRACKET>
+  ;
+
+// -----------------------------------------------------------------------------
+//  Purities
+// -----------------------------------------------------------------------------
+
+/**
+ * What iterating or calling a type may do, written as Psalm writes it in
+ * brackets right after the name, like:
+ *  - iterable[pure]<int, string>
+ *  - Closure[P](int): string
+ *
+ *  A generic type may be given several and a callable exactly one. Brackets
+ *  followed by neither are an offset access, which is what "T[K]" is.
+ */
+Purities
+  : <T_OPEN_SQUARE_BRACKET> Type() ( <T_COMMA> Type() )* <T_CLOSE_SQUARE_BRACKET>
+  ;
+
+Purity
+  : <T_OPEN_SQUARE_BRACKET> Type() <T_CLOSE_SQUARE_BRACKET>
   ;
 
 // -----------------------------------------------------------------------------
@@ -365,6 +388,7 @@ CallableReturnType
 
 CallableReturnTypeTail
   : GenericInReturnType() ArrayOrOffsetAccess()?
+  | Purities() GenericInReturnType() ArrayOrOffsetAccess()?
   | ArrayOrOffsetAccess()
   | !AngleBracketOpen()
   ;

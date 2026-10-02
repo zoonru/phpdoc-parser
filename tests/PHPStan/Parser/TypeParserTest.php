@@ -3142,6 +3142,104 @@ class TypeParserTest extends TestCase
 					),
 				]),
 			],
+			[
+				'iterable[pure]<int, string>',
+				new GenericTypeNode(
+					new IdentifierTypeNode('iterable'),
+					[
+						new IdentifierTypeNode('int'),
+						new IdentifierTypeNode('string'),
+					],
+					[
+						GenericTypeNode::VARIANCE_INVARIANT,
+						GenericTypeNode::VARIANCE_INVARIANT,
+					],
+					[
+						new IdentifierTypeNode('pure'),
+					],
+				),
+			],
+			[
+				'Iterator[P, read-props|io]<int, string>[]',
+				new ArrayTypeNode(
+					new GenericTypeNode(
+						new IdentifierTypeNode('Iterator'),
+						[
+							new IdentifierTypeNode('int'),
+							new IdentifierTypeNode('string'),
+						],
+						[
+							GenericTypeNode::VARIANCE_INVARIANT,
+							GenericTypeNode::VARIANCE_INVARIANT,
+						],
+						[
+							new IdentifierTypeNode('P'),
+							new UnionTypeNode([
+								new IdentifierTypeNode('read-props'),
+								new IdentifierTypeNode('io'),
+							]),
+						],
+					),
+				),
+			],
+			[
+				'Closure[_](int): string',
+				new CallableTypeNode(
+					new IdentifierTypeNode('Closure'),
+					[
+						new CallableTypeParameterNode(
+							new IdentifierTypeNode('int'),
+							false,
+							false,
+							'',
+							false,
+						),
+					],
+					new IdentifierTypeNode('string'),
+					[],
+					new IdentifierTypeNode('_'),
+				),
+			],
+			[
+				'callable(): Iterator[pure]<int, string>',
+				new CallableTypeNode(
+					new IdentifierTypeNode('callable'),
+					[],
+					new GenericTypeNode(
+						new IdentifierTypeNode('Iterator'),
+						[
+							new IdentifierTypeNode('int'),
+							new IdentifierTypeNode('string'),
+						],
+						[
+							GenericTypeNode::VARIANCE_INVARIANT,
+							GenericTypeNode::VARIANCE_INVARIANT,
+						],
+						[
+							new IdentifierTypeNode('pure'),
+						],
+					),
+					[],
+				),
+			],
+			[
+				'T[K]<b>bold</b>',
+				new OffsetAccessTypeNode(
+					new IdentifierTypeNode('T'),
+					new IdentifierTypeNode('K'),
+				),
+				Lexer::TOKEN_OPEN_ANGLE_BRACKET,
+			],
+			[
+				'Foo[P, Q](int): void',
+				new IdentifierTypeNode('Foo'),
+				Lexer::TOKEN_OPEN_SQUARE_BRACKET,
+			],
+			[
+				'Foo [P]<int>',
+				new IdentifierTypeNode('Foo'),
+				Lexer::TOKEN_OPEN_SQUARE_BRACKET,
+			],
 		];
 	}
 

@@ -7,6 +7,7 @@ use PHPStan\PhpDocParser\Ast;
 use PHPStan\PhpDocParser\Ast\PhpDoc\TemplateTagValueNode;
 use PHPStan\PhpDocParser\Lexer\Lexer;
 use PHPStan\PhpDocParser\ParserConfig;
+use function count;
 use function in_array;
 use function str_replace;
 use function strlen;
@@ -195,7 +196,8 @@ class TypeParser
 					$type = $this->tryParseCallable($tokens, $type, false);
 
 				} elseif ($tokens->isCurrentTokenType(Lexer::TOKEN_OPEN_SQUARE_BRACKET)) {
-					$type = $this->tryParseArrayOrOffsetAccess($tokens, $type);
+					$type = $this->tryParseWithPurities($tokens, $type, false)
+						?? $this->tryParseArrayOrOffsetAccess($tokens, $type);
 
 				} elseif (in_array($type->name, [
 					Ast\Type\ArrayShapeNode::KIND_ARRAY,
@@ -439,8 +441,11 @@ class TypeParser
 		return false;
 	}
 
-	/** @phpstan-impure */
-	public function parseGeneric(TokenIterator $tokens, Ast\Type\IdentifierTypeNode $baseType): Ast\Type\GenericTypeNode
+	/**
+	 * @param Ast\Type\TypeNode[] $purities
+	 * @phpstan-impure
+	 */
+	public function parseGeneric(TokenIterator $tokens, Ast\Type\IdentifierTypeNode $baseType, array $purities = []): Ast\Type\GenericTypeNode
 	{
 		$tokens->consumeTokenType(Lexer::TOKEN_OPEN_ANGLE_BRACKET);
 		$tokens->skipNewLineTokensAndConsumeComments();
@@ -467,7 +472,7 @@ class TypeParser
 			$tokens->skipNewLineTokensAndConsumeComments();
 		}
 
-		$type = new Ast\Type\GenericTypeNode($baseType, $genericTypes, $variances);
+		$type = new Ast\Type\GenericTypeNode($baseType, $genericTypes, $variances, $purities);
 		if ($startLine !== null && $startIndex !== null) {
 			$type = $this->enrichWithAttributes($tokens, $type, $startLine, $startIndex);
 		} else {
@@ -551,7 +556,7 @@ class TypeParser
 	}
 
 	/** @phpstan-impure */
-	private function parseCallable(TokenIterator $tokens, Ast\Type\IdentifierTypeNode $identifier, bool $hasTemplate): Ast\Type\TypeNode
+	private function parseCallable(TokenIterator $tokens, Ast\Type\IdentifierTypeNode $identifier, bool $hasTemplate, ?Ast\Type\TypeNode $purity = null): Ast\Type\TypeNode
 	{
 		$templates = $hasTemplate
 			? $this->parseCallableTemplates($tokens)
@@ -581,7 +586,7 @@ class TypeParser
 		$startIndex = $tokens->currentTokenIndex();
 		$returnType = $this->enrichWithAttributes($tokens, $this->parseCallableReturnType($tokens), $startLine, $startIndex);
 
-		return new Ast\Type\CallableTypeNode($identifier, $parameters, $returnType, $templates);
+		return new Ast\Type\CallableTypeNode($identifier, $parameters, $returnType, $templates, $purity);
 	}
 
 	/**
@@ -709,12 +714,14 @@ class TypeParser
 						}
 
 					} elseif ($tokens->isCurrentTokenType(Lexer::TOKEN_OPEN_SQUARE_BRACKET)) {
-						$type = $this->tryParseArrayOrOffsetAccess($tokens, $this->enrichWithAttributes(
+						$type = $this->enrichWithAttributes(
 							$tokens,
 							$type,
 							$startLine,
 							$startIndex,
-						));
+						);
+						$type = $this->tryParseWithPurities($tokens, $type, true)
+							?? $this->tryParseArrayOrOffsetAccess($tokens, $type);
 
 					} elseif (in_array($type->name, [
 						Ast\Type\ArrayShapeNode::KIND_ARRAY,
@@ -808,6 +815,64 @@ class TypeParser
 		}
 
 		return $type;
+	}
+
+	/**
+	 * Reads the purities Psalm writes in brackets right after a name, saying what
+	 * iterating or calling the type may do, like:
+	 *  - iterable[pure]<int, string>
+	 *  - Closure[P](int): string
+	 *
+	 * Brackets followed by neither the arguments of a generic type nor (outside
+	 * of the return type of a callable, which is read the way it always is) the
+	 * parameters of a callable are left to be read as an offset access, which is
+	 * what "T[K]" is.
+	 *
+	 * @phpstan-impure
+	 */
+	private function tryParseWithPurities(TokenIterator $tokens, Ast\Type\IdentifierTypeNode $type, bool $inCallableReturnType): ?Ast\Type\TypeNode
+	{
+		if ($tokens->isPrecededByHorizontalWhitespace()) {
+			return null;
+		}
+
+		$tokens->pushSavePoint();
+		try {
+			$tokens->consumeTokenType(Lexer::TOKEN_OPEN_SQUARE_BRACKET);
+			$purities = [$this->parse($tokens)];
+			while ($tokens->tryConsumeTokenType(Lexer::TOKEN_COMMA)) {
+				$purities[] = $this->parse($tokens);
+			}
+			$tokens->consumeTokenType(Lexer::TOKEN_CLOSE_SQUARE_BRACKET);
+
+			if ($tokens->isCurrentTokenType(Lexer::TOKEN_OPEN_ANGLE_BRACKET)) {
+				$isHtml = false;
+				if (!$inCallableReturnType) {
+					$tokens->pushSavePoint();
+					$isHtml = $this->isHtml($tokens);
+					$tokens->rollback();
+				}
+
+				if (!$isHtml) {
+					$genericType = $this->parseGeneric($tokens, $type, $purities);
+					if ($tokens->isCurrentTokenType(Lexer::TOKEN_OPEN_SQUARE_BRACKET)) {
+						$genericType = $this->tryParseArrayOrOffsetAccess($tokens, $genericType);
+					}
+
+					$tokens->dropSavePoint();
+					return $genericType;
+				}
+			} elseif (!$inCallableReturnType && count($purities) === 1 && $tokens->isCurrentTokenType(Lexer::TOKEN_OPEN_PARENTHESES)) {
+				$callableType = $this->parseCallable($tokens, $type, false, $purities[0]);
+				$tokens->dropSavePoint();
+				return $callableType;
+			}
+		} catch (ParserException $e) {
+			// not purities, but an offset access
+		}
+
+		$tokens->rollback();
+		return null;
 	}
 
 	/** @phpstan-impure */

@@ -13,6 +13,12 @@ class CallableTypeNode implements TypeNode
 
 	public IdentifierTypeNode $identifier;
 
+	/**
+	 * What calling the callable may do, written in brackets after its name, like
+	 * "Closure[pure](int): string"
+	 */
+	public ?TypeNode $purity;
+
 	/** @var TemplateTagValueNode[] */
 	public array $templateTypes;
 
@@ -25,9 +31,10 @@ class CallableTypeNode implements TypeNode
 	 * @param CallableTypeParameterNode[] $parameters
 	 * @param TemplateTagValueNode[]  $templateTypes
 	 */
-	public function __construct(IdentifierTypeNode $identifier, array $parameters, TypeNode $returnType, array $templateTypes)
+	public function __construct(IdentifierTypeNode $identifier, array $parameters, TypeNode $returnType, array $templateTypes, ?TypeNode $purity = null)
 	{
 		$this->identifier = $identifier;
+		$this->purity = $purity;
 		$this->parameters = $parameters;
 		$this->returnType = $returnType;
 		$this->templateTypes = $templateTypes;
@@ -42,8 +49,9 @@ class CallableTypeNode implements TypeNode
 		$template = $this->templateTypes !== []
 			? '<' . implode(', ', $this->templateTypes) . '>'
 			: '';
+		$purity = $this->purity !== null ? "[{$this->purity}]" : '';
 		$parameters = implode(', ', $this->parameters);
-		return "{$this->identifier}{$template}({$parameters}): {$returnType}";
+		return "{$this->identifier}{$purity}{$template}({$parameters}): {$returnType}";
 	}
 
 	/**
@@ -51,7 +59,7 @@ class CallableTypeNode implements TypeNode
 	 */
 	public static function __set_state(array $properties): self
 	{
-		$instance = new self($properties['identifier'], $properties['parameters'], $properties['returnType'], $properties['templateTypes']);
+		$instance = new self($properties['identifier'], $properties['parameters'], $properties['returnType'], $properties['templateTypes'], $properties['purity'] ?? null);
 		if (isset($properties['attributes'])) {
 			foreach ($properties['attributes'] as $key => $value) {
 				$instance->setAttribute($key, $value);

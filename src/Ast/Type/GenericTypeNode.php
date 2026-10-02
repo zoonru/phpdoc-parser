@@ -18,6 +18,14 @@ class GenericTypeNode implements TypeNode
 
 	public IdentifierTypeNode $type;
 
+	/**
+	 * What iterating or calling the type may do, written in brackets before the
+	 * arguments, like "iterable[pure]<int, string>"
+	 *
+	 * @var TypeNode[]
+	 */
+	public array $purities;
+
 	/** @var TypeNode[] */
 	public array $genericTypes;
 
@@ -27,10 +35,12 @@ class GenericTypeNode implements TypeNode
 	/**
 	 * @param TypeNode[] $genericTypes
 	 * @param (self::VARIANCE_*)[] $variances
+	 * @param TypeNode[] $purities
 	 */
-	public function __construct(IdentifierTypeNode $type, array $genericTypes, array $variances = [])
+	public function __construct(IdentifierTypeNode $type, array $genericTypes, array $variances = [], array $purities = [])
 	{
 		$this->type = $type;
+		$this->purities = $purities;
 		$this->genericTypes = $genericTypes;
 		$this->variances = $variances;
 	}
@@ -50,7 +60,11 @@ class GenericTypeNode implements TypeNode
 			}
 		}
 
-		return $this->type . '<' . implode(', ', $genericTypes) . '>';
+		$purities = $this->purities !== []
+			? '[' . implode(', ', $this->purities) . ']'
+			: '';
+
+		return $this->type . $purities . '<' . implode(', ', $genericTypes) . '>';
 	}
 
 	/**
@@ -58,7 +72,7 @@ class GenericTypeNode implements TypeNode
 	 */
 	public static function __set_state(array $properties): self
 	{
-		$instance = new self($properties['type'], $properties['genericTypes'], $properties['variances'] ?? []);
+		$instance = new self($properties['type'], $properties['genericTypes'], $properties['variances'] ?? [], $properties['purities'] ?? []);
 		if (isset($properties['attributes'])) {
 			foreach ($properties['attributes'] as $key => $value) {
 				$instance->setAttribute($key, $value);

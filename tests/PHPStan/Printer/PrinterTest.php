@@ -1866,6 +1866,74 @@ class PrinterTest extends TestCase
 		];
 
 		yield [
+			'/** @param iterable[pure]<int,  string> $a */',
+			'/** @param iterable[pure]<int,  int> $a */',
+			new class extends AbstractNodeVisitor {
+
+				public function enterNode(Node $node)
+				{
+					if ($node instanceof IdentifierTypeNode && $node->name === 'string') {
+						return new IdentifierTypeNode('int');
+					}
+
+					return $node;
+				}
+
+			},
+		];
+
+		yield [
+			'/** @param Closure[_]( int ): void $a */',
+			'/** @param Closure[pure]( int ): void $a */',
+			new class extends AbstractNodeVisitor {
+
+				public function enterNode(Node $node)
+				{
+					if ($node instanceof IdentifierTypeNode && $node->name === '_') {
+						return new IdentifierTypeNode('pure');
+					}
+
+					return $node;
+				}
+
+			},
+		];
+
+		yield [
+			'/** @param iterable<int, string> $a */',
+			'/** @param iterable[pure]<int, string> $a */',
+			new class extends AbstractNodeVisitor {
+
+				public function enterNode(Node $node)
+				{
+					if ($node instanceof GenericTypeNode) {
+						$node->purities = [new IdentifierTypeNode('pure')];
+					}
+
+					return $node;
+				}
+
+			},
+		];
+
+		yield [
+			'/** @param Iterator[P]<int> $a */',
+			'/** @param Iterator[P, io]<int> $a */',
+			new class extends AbstractNodeVisitor {
+
+				public function enterNode(Node $node)
+				{
+					if ($node instanceof GenericTypeNode) {
+						$node->purities[] = new IdentifierTypeNode('io');
+					}
+
+					return $node;
+				}
+
+			},
+		];
+
+		yield [
 			'/** @return callable(): (null|null) */',
 			'/** @return callable(): (int|null) */',
 			new class extends AbstractNodeVisitor {
